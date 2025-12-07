@@ -333,7 +333,7 @@ try {
   // Handle success
 } on ApiError catch (e) {
   // Handle API error
-  print('API Error: ${e.massage} (${e.statusCode})');
+  print('API Error: ${e.massage} (${e.statusCode})'); // Note: 'massage' is from existing ApiError class
 } on DioException catch (e) {
   // Handle network error
   print('Network Error: ${e.message}');
