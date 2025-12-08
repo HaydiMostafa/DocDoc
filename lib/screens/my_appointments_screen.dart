@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import '../core/constants/color_theme.dart';
 import '../logic/models/appointment.dart';
-import '../logic/appointment_logic/appointment_service.dart';
+import '../logic/appointment_logic/appointment_repository.dart';
 import 'cancel_appointment_dialog.dart';
 
 class MyAppointmentsScreen extends StatefulWidget {
@@ -15,9 +15,10 @@ class MyAppointmentsScreen extends StatefulWidget {
 class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final AppointmentService _appointmentService = AppointmentService();
+  final AppointmentRepository _appointmentRepository = AppointmentRepository();
   List<Appointment> _upcomingAppointments = [];
   List<Appointment> _pastAppointments = [];
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -40,15 +41,28 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
   }
 
   Future<void> _loadAppointments() async {
-    await _appointmentService.loadAppointments();
-    _updateAppointmentLists();
-  }
-
-  void _updateAppointmentLists() {
-    setState(() {
-      _upcomingAppointments = _appointmentService.getUpcomingAppointments();
-      _pastAppointments = _appointmentService.getPastAppointments();
-    });
+    setState(() => _isLoading = true);
+    
+    try {
+      final upcoming = await _appointmentRepository.getUpcomingAppointments();
+      final past = await _appointmentRepository.getPastAppointments();
+      
+      setState(() {
+        _upcomingAppointments = upcoming;
+        _pastAppointments = past;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load appointments: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   void _cancelAppointment(Appointment appointment) async {
@@ -58,16 +72,27 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
     );
 
     if (confirmed == true && appointment.id != null) {
-      await _appointmentService.cancelAppointment(appointment.id!);
-      _updateAppointmentLists();
+      try {
+        await _appointmentRepository.cancelAppointment(appointment.id!);
+        await _loadAppointments(); // Reload appointments from API
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Appointment cancelled successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Appointment cancelled successfully'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to cancel appointment: ${e.toString()}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }
@@ -159,13 +184,15 @@ class _MyAppointmentsScreenState extends State<MyAppointmentsScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildAppointmentsList(_upcomingAppointments, isUpcoming: true),
-          _buildAppointmentsList(_pastAppointments, isUpcoming: false),
-        ],
-      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : TabBarView(
+              controller: _tabController,
+              children: [
+                _buildAppointmentsList(_upcomingAppointments, isUpcoming: true),
+                _buildAppointmentsList(_pastAppointments, isUpcoming: false),
+              ],
+            ),
     );
   }
 
